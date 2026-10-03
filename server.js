@@ -3,6 +3,7 @@ import multer from 'multer'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
+import sharp from 'sharp'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -62,12 +63,9 @@ const save = (db) => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2))
 const id = () => crypto.randomBytes(6).toString('hex')
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: UPLOADS,
-    filename: (_, f, cb) => cb(null, id() + path.extname(f.originalname).toLowerCase())
-  }),
+  storage: multer.memoryStorage(),
   fileFilter: (_, f, cb) => cb(null, /^image\//.test(f.mimetype)),
-  limits: { fileSize: 40 * 1024 * 1024 }
+  limits: { fileSize: 50 * 1024 * 1024 }
 })
 
 const app = express()
@@ -114,11 +112,36 @@ app.delete('/api/users/:id', admin, (req, res) => {
   db.users = db.users.filter(u => u.id !== req.params.id)
   save(db); res.json({ ok: true })
 })
-app.post('/api/users/:id/images', admin, upload.array('images', 100), (req, res) => {
+app.post('/api/users/:id/images', admin, upload.array('images', 100), async (req, res) => {
   const db = load()
   if (!db.users.some(u => u.id === req.params.id)) return res.status(404).json({ error: 'Nincs ilyen felhasználó' })
-  const added = (req.files || []).map(f => ({ id: id(), userId: req.params.id, file: f.filename }))
-  db.images.push(...added); save(db); res.json({ added: added.length })
+  const files = req.files || []
+  if (!files.length) return res.json({ added: 0 })
+
+  try {
+    const added = await Promise.all(
+      files.map(async (f) => {
+        const imgId = id()
+        const filename = `${imgId}.webp`
+        const filepath = path.join(UPLOADS, filename)
+
+        await sharp(f.buffer)
+          .rotate()
+          .resize({ width: 2560, height: 2560, fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 82, effort: 4 })
+          .toFile(filepath)
+
+        return { id: id(), userId: req.params.id, file: filename }
+      })
+    )
+
+    db.images.push(...added)
+    save(db)
+    res.json({ added: added.length })
+  } catch (err) {
+    console.error('Kép konvertálási hiba:', err)
+    res.status(500).json({ error: 'Hiba történt a képek feldolgozása közben' })
+  }
 })
 app.delete('/api/images/:id', admin, (req, res) => {
   const db = load()
