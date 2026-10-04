@@ -14,10 +14,12 @@ const showNewUser = ref(false);
 const newName = ref("");
 const newColor = ref("#e0527a");
 const newIcon = ref("fa-solid fa-user");
+const newOrder = ref(1);
 const editingUser = ref(false);
 const editName = ref("");
 const editColor = ref("#e0527a");
 const editIcon = ref("fa-solid fa-user");
+const editOrder = ref(1);
 const busy = ref(false);
 const dragging = ref(false);
 const notice = ref("");
@@ -47,6 +49,7 @@ async function refresh() {
   if (selected.value && !users.value.some((u) => u.id === selected.value))
     selected.value = null;
   if (!selected.value && users.value.length) selected.value = users.value[0].id;
+  newOrder.value = users.value.length + 1;
   await loadImages();
 }
 async function loadImages() {
@@ -63,6 +66,7 @@ function startEdit() {
   editName.value = selectedUser.value.name;
   editColor.value = selectedUser.value.color;
   editIcon.value = selectedUser.value.icon || "fa-solid fa-user";
+  editOrder.value = selectedUser.value.sort_order ?? 1;
   editingUser.value = true;
 }
 
@@ -73,6 +77,7 @@ async function saveEdit() {
       name: editName.value.trim(),
       color: editColor.value,
       icon: editIcon.value,
+      sort_order: Number(editOrder.value) || 1,
     });
     editingUser.value = false;
     await refresh();
@@ -86,9 +91,10 @@ async function addUser() {
   if (!newName.value.trim()) return;
   try {
     const u = await api.createUser({
-      name: newName.value,
+      name: newName.value.trim(),
       color: newColor.value,
       icon: newIcon.value,
+      sort_order: newOrder.value ? Number(newOrder.value) : undefined,
     });
     newName.value = "";
     selected.value = u.id;
@@ -104,6 +110,20 @@ async function removeUser(u) {
   await api.deleteUser(u.id);
   await refresh();
   say("Felhasználó törölve");
+}
+async function moveUser(index, dir) {
+  const targetIdx = index + dir;
+  if (targetIdx < 0 || targetIdx >= users.value.length) return;
+  const list = [...users.value];
+  const [moved] = list.splice(index, 1);
+  list.splice(targetIdx, 0, moved);
+  try {
+    await api.reorderUsers(list.map((u) => u.id));
+    await refresh();
+    say("Sorrend frissítve");
+  } catch (e) {
+    error.value = e.message;
+  }
 }
 async function upload(files) {
   const list = [...files].filter((f) => f.type.startsWith("image/"));
@@ -164,20 +184,47 @@ onMounted(async () => {
         </div>
 
         <ul v-if="users.length">
-          <li v-for="u in users" :key="u.id" :class="{ on: u.id === selected }">
+          <li v-for="(u, idx) in users" :key="u.id" :class="{ on: u.id === selected }">
+            <div class="order-arrows">
+              <button
+                type="button"
+                class="order-btn"
+                :disabled="idx === 0"
+                @click.stop="moveUser(idx, -1)"
+                :aria-label="u.name + ' előrébb mozgatása'"
+                title="Előrébb mozgatás"
+              >
+                <i class="fa-solid fa-chevron-up"></i>
+              </button>
+              <button
+                type="button"
+                class="order-btn"
+                :disabled="idx === users.length - 1"
+                @click.stop="moveUser(idx, 1)"
+                :aria-label="u.name + ' hátrébb mozgatása'"
+                title="Hátrébb mozgatás"
+              >
+                <i class="fa-solid fa-chevron-down"></i>
+              </button>
+            </div>
             <button class="pick" @click="select(u.id)">
               <span class="dot" :style="{ background: u.color }">
                 <i v-if="u.icon" :class="u.icon"></i>
                 <span v-else>{{ u.name.charAt(0).toUpperCase() }}</span>
               </span>
-              <span
-                >{{ u.name }}<small>{{ u.count }} kép</small></span
-              >
+              <span class="pick-text">
+                <span class="pick-name">
+                  <span class="order-tag">#{{ u.sort_order }}</span>
+                  {{ u.name }}
+                </span>
+                <small>{{ u.count }} kép</small>
+              </span>
             </button>
             <button
               class="icon"
               @click="removeUser(u)"
               :aria-label="u.name + ' törlése'"
+              title="Törlés"
             >
               <i class="fa-solid fa-trash"></i>
             </button>
@@ -211,12 +258,25 @@ onMounted(async () => {
           <div class="preview-avatar" :style="{ background: newColor }">
             <i :class="newIcon"></i>
           </div>
-          <input
-            v-model="newName"
-            placeholder="Új felhasználó neve"
-            aria-label="Új felhasználó neve"
-            autofocus
-          />
+          <div class="form-row">
+            <input
+              v-model="newName"
+              placeholder="Új felhasználó neve"
+              aria-label="Új felhasználó neve"
+              autofocus
+            />
+            <div class="order-field">
+              <label for="new-order">Sorrend:</label>
+              <input
+                id="new-order"
+                v-model.number="newOrder"
+                type="number"
+                min="1"
+                placeholder="Szám"
+                aria-label="Sorrend száma"
+              />
+            </div>
+          </div>
           <ColorPicker v-model="newColor" />
           <IconPicker v-model="newIcon" />
           <div class="new-actions">
@@ -249,8 +309,11 @@ onMounted(async () => {
                 }}</span>
               </span>
               <div>
-                <h3>{{ selectedUser.name }}</h3>
-                <span class="muted">{{ images.length }} kép</span>
+                <h3>
+                  <span class="order-badge">#{{ selectedUser.sort_order }}</span>
+                  {{ selectedUser.name }}
+                </h3>
+                <span class="muted">{{ images.length }} kép · Sorrend: {{ selectedUser.sort_order }}.</span>
               </div>
             </div>
             <button type="button" class="btn ghost sm" @click="startEdit">
@@ -272,7 +335,20 @@ onMounted(async () => {
               <span class="dot large" :style="{ background: editColor }">
                 <i :class="editIcon"></i>
               </span>
-              <input v-model="editName" placeholder="Név" aria-label="Név" />
+              <div class="edit-inputs">
+                <input v-model="editName" placeholder="Név" aria-label="Név" />
+                <div class="order-field">
+                  <label for="edit-order">Sorrend:</label>
+                  <input
+                    id="edit-order"
+                    v-model.number="editOrder"
+                    type="number"
+                    min="1"
+                    placeholder="Szám"
+                    aria-label="Sorrend száma"
+                  />
+                </div>
+              </div>
               <button class="btn sm" @click="saveEdit">
                 <i class="fa-solid fa-check"></i> Mentés
               </button>
@@ -395,7 +471,7 @@ input:not([type="file"]) {
 }
 .layout {
   display: grid;
-  grid-template-columns: 330px 1fr;
+  grid-template-columns: 350px 1fr;
   gap: 2rem;
 }
 @media (max-width: 800px) {
@@ -416,10 +492,36 @@ aside li {
   align-items: center;
   border-radius: 8px;
   border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
 }
 aside li.on {
   background: var(--panel);
   border-color: var(--line);
+}
+.order-arrows {
+  display: flex;
+  flex-direction: column;
+  padding-left: 0.35rem;
+  gap: 1px;
+}
+.order-btn {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  padding: 0.2rem 0.25rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.order-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.12);
+}
+.order-btn:disabled {
+  opacity: 0.18;
+  cursor: default;
 }
 .pick {
   flex: 1;
@@ -427,9 +529,44 @@ aside li.on {
   border: 0;
   display: flex;
   align-items: center;
-  gap: 0.8rem;
-  padding: 0.55rem;
+  gap: 0.7rem;
+  padding: 0.55rem 0.4rem;
   text-align: left;
+  min-width: 0;
+}
+.pick-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.pick-name {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.order-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.order-badge {
+  display: inline-block;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(242, 180, 65, 0.15);
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  vertical-align: middle;
+  margin-right: 0.35rem;
 }
 .pick small {
   display: block;
@@ -493,6 +630,27 @@ aside li.on {
   align-items: center;
   gap: 0.4rem;
 }
+.form-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+.form-row input:first-child {
+  flex: 1;
+}
+.order-field {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.order-field input {
+  width: 65px !important;
+  text-align: center;
+  padding: 0.65rem 0.4rem;
+}
 .new-actions {
   display: flex;
   justify-content: flex-end;
@@ -532,6 +690,8 @@ aside li.on {
 .user-info h3 {
   font-size: 1.2rem;
   font-weight: 600;
+  display: flex;
+  align-items: center;
 }
 .btn.sm {
   padding: 0.4rem 0.75rem;
@@ -552,7 +712,13 @@ aside li.on {
   align-items: center;
   gap: 0.7rem;
 }
-.edit-preview input {
+.edit-inputs {
+  display: flex;
+  flex: 1;
+  gap: 0.6rem;
+  align-items: center;
+}
+.edit-inputs input:first-child {
   flex: 1;
 }
 .drop {

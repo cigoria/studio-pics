@@ -29,6 +29,12 @@ export const updateUser = (id, body) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+export const reorderUsers = (ids) =>
+  req("/api/users/reorder", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
 export const deleteUser = (id) => req(`/api/users/${id}`, { method: "DELETE" });
 export const deleteImage = (id) =>
   req(`/api/images/${id}`, { method: "DELETE" });

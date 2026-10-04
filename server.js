@@ -90,9 +90,16 @@ app.post('/api/users', admin, (req, res) => {
     id: id(),
     name,
     color: req.body.color || '#3b82f6',
-    icon: req.body.icon || 'fa-solid fa-user'
+    icon: req.body.icon || 'fa-solid fa-user',
+    sort_order: req.body.sort_order
   })
   res.json(user)
+})
+app.put('/api/users/reorder', admin, (req, res) => {
+  const { ids } = req.body
+  if (!Array.isArray(ids)) return res.status(400).json({ error: 'Érvénytelen azonosító lista' })
+  db.reorderUsers(ids)
+  res.json({ ok: true, users: db.getUsers() })
 })
 app.put('/api/users/:id', admin, (req, res) => {
   if (req.body.name !== undefined) {
@@ -102,7 +109,8 @@ app.put('/api/users/:id', admin, (req, res) => {
   const updated = db.updateUser(req.params.id, {
     name: req.body.name,
     color: req.body.color,
-    icon: req.body.icon
+    icon: req.body.icon,
+    sort_order: req.body.sort_order
   })
   if (!updated) return res.status(404).json({ error: 'Nincs ilyen felhasználó' })
   res.json(updated)

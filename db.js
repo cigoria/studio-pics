@@ -19,7 +19,8 @@ db.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     color TEXT NOT NULL DEFAULT '#3b82f6',
-    icon TEXT NOT NULL DEFAULT 'fa-solid fa-user'
+    icon TEXT NOT NULL DEFAULT 'fa-solid fa-user',
+    sort_order INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS images (
@@ -30,25 +31,51 @@ db.exec(`
   );
 `)
 
+// Oszlop migráció és kezdeti sorszámok beállítása, ha a sort_order még nem létezett
+function migrateSchemaIfNeeded() {
+  const columns = db.pragma('table_info(users)').map(c => c.name)
+  if (!columns.includes('sort_order')) {
+    db.exec('ALTER TABLE users ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0')
+  }
+
+  // Ha vannak olyan felhasználók, akiknek sort_order <= 0 vagy mind 0, inicializáljuk 1..N-re
+  const usersWithZeroOrder = db.prepare('SELECT id, rowid FROM users WHERE sort_order <= 0 ORDER BY rowid ASC').all()
+  if (usersWithZeroOrder.length > 0) {
+    const maxOrderRow = db.prepare('SELECT MAX(sort_order) as maxOrder FROM users WHERE sort_order > 0').get()
+    let currentMax = maxOrderRow?.maxOrder || 0
+    const updateOrder = db.prepare('UPDATE users SET sort_order = ? WHERE id = ?')
+    const initTx = db.transaction(() => {
+      for (const u of usersWithZeroOrder) {
+        currentMax += 1
+        updateOrder.run(currentMax, u.id)
+      }
+    })
+    initTx()
+  }
+}
+
+migrateSchemaIfNeeded()
+
 // Automatikus egyszeri migráció a data.json-ból, ha az adatbázis még üres
 function migrateFromJsonIfNeeded() {
   const countRow = db.prepare('SELECT COUNT(*) as count FROM users').get()
   if (countRow.count === 0 && fs.existsSync(JSON_FILE)) {
     try {
       const data = JSON.parse(fs.readFileSync(JSON_FILE, 'utf8'))
-      const insertUser = db.prepare('INSERT INTO users (id, name, color, icon) VALUES (@id, @name, @color, @icon)')
+      const insertUser = db.prepare('INSERT INTO users (id, name, color, icon, sort_order) VALUES (@id, @name, @color, @icon, @sort_order)')
       const insertImage = db.prepare('INSERT INTO images (id, user_id, file) VALUES (@id, @userId, @file)')
 
       const migrateTx = db.transaction(() => {
         if (Array.isArray(data.users)) {
-          for (const u of data.users) {
+          data.users.forEach((u, index) => {
             insertUser.run({
               id: u.id,
               name: u.name,
               color: u.color || '#3b82f6',
-              icon: u.icon || 'fa-solid fa-user'
+              icon: u.icon || 'fa-solid fa-user',
+              sort_order: u.sort_order !== undefined ? Number(u.sort_order) : index + 1
             })
-          }
+          })
         }
         if (Array.isArray(data.images)) {
           for (const img of data.images) {
@@ -71,7 +98,7 @@ function migrateFromJsonIfNeeded() {
 
 migrateFromJsonIfNeeded()
 
-// Felhasználók lekérdezése képszámlálóval
+// Felhasználók lekérdezése képszámlálóval és sorrenddel
 export function getUsers() {
   const stmt = db.prepare(`
     SELECT 
@@ -79,17 +106,19 @@ export function getUsers() {
       u.name, 
       u.color, 
       u.icon, 
+      u.sort_order,
       COUNT(i.id) AS count
     FROM users u
     LEFT JOIN images i ON u.id = i.user_id
-    GROUP BY u.id, u.name, u.color, u.icon
+    GROUP BY u.id, u.name, u.color, u.icon, u.sort_order
+    ORDER BY u.sort_order ASC, u.name ASC, u.id ASC
   `)
   return stmt.all()
 }
 
 // Felhasználó lekérése
 export function getUser(id) {
-  return db.prepare('SELECT id, name, color, icon FROM users WHERE id = ?').get(id)
+  return db.prepare('SELECT id, name, color, icon, sort_order FROM users WHERE id = ?').get(id)
 }
 
 // Felhasználó képeinek lekérése
@@ -98,23 +127,43 @@ export function getUserImages(userId) {
 }
 
 // Felhasználó létrehozása
-export function createUser({ id, name, color, icon }) {
-  const stmt = db.prepare('INSERT INTO users (id, name, color, icon) VALUES (?, ?, ?, ?)')
-  stmt.run(id, name, color, icon)
-  return { id, name, color, icon }
+export function createUser({ id, name, color, icon, sort_order }) {
+  let order = Number(sort_order)
+  if (!Number.isFinite(order) || order < 1) {
+    const maxRow = db.prepare('SELECT MAX(sort_order) as maxOrder FROM users').get()
+    order = (maxRow?.maxOrder || 0) + 1
+  }
+  const stmt = db.prepare('INSERT INTO users (id, name, color, icon, sort_order) VALUES (?, ?, ?, ?, ?)')
+  stmt.run(id, name, color, icon, order)
+  return { id, name, color, icon, sort_order: order }
 }
 
 // Felhasználó frissítése
-export function updateUser(id, { name, color, icon }) {
+export function updateUser(id, { name, color, icon, sort_order }) {
   const current = getUser(id)
   if (!current) return null
 
   const newName = name !== undefined ? name : current.name
   const newColor = color !== undefined ? color : current.color
   const newIcon = icon !== undefined ? icon : current.icon
+  const newOrder = (sort_order !== undefined && Number.isFinite(Number(sort_order)))
+    ? Number(sort_order)
+    : current.sort_order
 
-  db.prepare('UPDATE users SET name = ?, color = ?, icon = ? WHERE id = ?').run(newName, newColor, newIcon, id)
-  return { id, name: newName, color: newColor, icon: newIcon }
+  db.prepare('UPDATE users SET name = ?, color = ?, icon = ?, sort_order = ? WHERE id = ?')
+    .run(newName, newColor, newIcon, newOrder, id)
+  return { id, name: newName, color: newColor, icon: newIcon, sort_order: newOrder }
+}
+
+// Felhasználók sorrendjének átrendezése ID lista alapján
+export function reorderUsers(orderedIds) {
+  const updateStmt = db.prepare('UPDATE users SET sort_order = ? WHERE id = ?')
+  const tx = db.transaction((ids) => {
+    ids.forEach((userId, index) => {
+      updateStmt.run(index + 1, userId)
+    })
+  })
+  tx(orderedIds)
 }
 
 // Felhasználó törlése (visszaadja a törölt képek fájlneveit, hogy a lemezről is törölhetők legyenek)
