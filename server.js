@@ -51,15 +51,14 @@ if (fs.existsSync(envPath)) {
   }
 }
 
+import * as db from './db.js'
+
 const UPLOADS = path.join(__dirname, 'uploads')
-const DB_FILE = path.join(__dirname, 'data.json')
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin'
 const isDev = process.env.NODE_ENV === 'development' || process.env.npm_lifecycle_event === 'dev'
 const PORT = isDev ? (process.env.SERVER_PORT || 3000) : (process.env.PORT || process.env.SERVER_PORT || 5173)
 fs.mkdirSync(UPLOADS, { recursive: true })
 
-const load = () => fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) : { users: [], images: [] }
-const save = (db) => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2))
 const id = () => crypto.randomBytes(6).toString('hex')
 
 const upload = multer({
@@ -77,44 +76,46 @@ const admin = (req, res, next) =>
 
 // publikus
 app.get('/api/users', (_, res) => {
-  const db = load()
-  res.json(db.users.map(u => ({ ...u, count: db.images.filter(i => i.userId === u.id).length })))
+  res.json(db.getUsers())
 })
 app.get('/api/users/:id/images', (req, res) =>
-  res.json(load().images.filter(i => i.userId === req.params.id).map(i => ({ id: i.id, url: '/uploads/' + i.file }))))
+  res.json(db.getUserImages(req.params.id).map(i => ({ id: i.id, url: '/uploads/' + i.file }))))
 
 // admin
 app.post('/api/login', admin, (_, res) => res.json({ ok: true }))
 app.post('/api/users', admin, (req, res) => {
   const name = String(req.body.name || '').trim()
   if (!name) return res.status(400).json({ error: 'A név kötelező' })
-  const db = load()
-  const user = { id: id(), name, color: req.body.color || '#3b82f6', icon: req.body.icon || 'fa-solid fa-user' }
-  db.users.push(user); save(db); res.json(user)
+  const user = db.createUser({
+    id: id(),
+    name,
+    color: req.body.color || '#3b82f6',
+    icon: req.body.icon || 'fa-solid fa-user'
+  })
+  res.json(user)
 })
 app.put('/api/users/:id', admin, (req, res) => {
-  const db = load()
-  const idx = db.users.findIndex(u => u.id === req.params.id)
-  if (idx === -1) return res.status(404).json({ error: 'Nincs ilyen felhasználó' })
   if (req.body.name !== undefined) {
     const name = String(req.body.name || '').trim()
     if (!name) return res.status(400).json({ error: 'A név kötelező' })
-    db.users[idx].name = name
   }
-  if (req.body.color) db.users[idx].color = req.body.color
-  if (req.body.icon) db.users[idx].icon = req.body.icon
-  save(db); res.json(db.users[idx])
+  const updated = db.updateUser(req.params.id, {
+    name: req.body.name,
+    color: req.body.color,
+    icon: req.body.icon
+  })
+  if (!updated) return res.status(404).json({ error: 'Nincs ilyen felhasználó' })
+  res.json(updated)
 })
 app.delete('/api/users/:id', admin, (req, res) => {
-  const db = load()
-  db.images.filter(i => i.userId === req.params.id).forEach(i => fs.rmSync(path.join(UPLOADS, i.file), { force: true }))
-  db.images = db.images.filter(i => i.userId !== req.params.id)
-  db.users = db.users.filter(u => u.id !== req.params.id)
-  save(db); res.json({ ok: true })
+  const result = db.deleteUser(req.params.id)
+  if (result.imageFiles && result.imageFiles.length > 0) {
+    result.imageFiles.forEach(file => fs.rmSync(path.join(UPLOADS, file), { force: true }))
+  }
+  res.json({ ok: true })
 })
 app.post('/api/users/:id/images', admin, upload.array('images', 100), async (req, res) => {
-  const db = load()
-  if (!db.users.some(u => u.id === req.params.id)) return res.status(404).json({ error: 'Nincs ilyen felhasználó' })
+  if (!db.getUser(req.params.id)) return res.status(404).json({ error: 'Nincs ilyen felhasználó' })
   const files = req.files || []
   if (!files.length) return res.json({ added: 0 })
 
@@ -135,8 +136,7 @@ app.post('/api/users/:id/images', admin, upload.array('images', 100), async (req
       })
     )
 
-    db.images.push(...added)
-    save(db)
+    db.addImages(added)
     res.json({ added: added.length })
   } catch (err) {
     console.error('Kép konvertálási hiba:', err)
@@ -144,11 +144,9 @@ app.post('/api/users/:id/images', admin, upload.array('images', 100), async (req
   }
 })
 app.delete('/api/images/:id', admin, (req, res) => {
-  const db = load()
-  const img = db.images.find(i => i.id === req.params.id)
+  const img = db.deleteImage(req.params.id)
   if (img) fs.rmSync(path.join(UPLOADS, img.file), { force: true })
-  db.images = db.images.filter(i => i.id !== req.params.id)
-  save(db); res.json({ ok: true })
+  res.json({ ok: true })
 })
 
 // build kiszolgálása

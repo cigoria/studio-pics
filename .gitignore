@@ -1,5 +1,6 @@
 node_modules
 uploads
 data.json
+data.db*
 dist
 .env
