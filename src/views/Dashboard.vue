@@ -126,14 +126,14 @@ async function moveUser(index, dir) {
   }
 }
 async function upload(files) {
-  const list = [...files].filter((f) => f.type.startsWith("image/"));
+  const list = [...files].filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
   if (!list.length || !selected.value) return;
   busy.value = true;
   try {
-    for (let i = 0; i < list.length; i += 10)
-      await api.uploadImages(selected.value, list.slice(i, i + 10));
+    for (let i = 0; i < list.length; i += 5)
+      await api.uploadImages(selected.value, list.slice(i, i + 5));
     await refresh();
-    say(`${list.length} kép feltöltve`);
+    say(`${list.length} média feltöltve és optimalizálva`);
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -147,7 +147,18 @@ function onDrop(e) {
 async function removeImage(im) {
   await api.deleteImage(im.id);
   await refresh();
-  say("Kép törölve");
+  say("Média törölve");
+}
+async function toggleAuth(im) {
+  const newStatus = !im.requiresAuth;
+  try {
+    await api.updateImage(im.id, { requiresAuth: newStatus });
+    im.requiresAuth = newStatus;
+    say(newStatus ? "Csak bejelentkezve látható" : "Mindenki számára látható");
+    await refresh();
+  } catch (e) {
+    error.value = e.message;
+  }
 }
 
 onMounted(async () => {
@@ -374,12 +385,13 @@ onMounted(async () => {
           ></i>
           <strong>{{
             busy
-              ? "Feltöltés…"
-              : "Húzd ide a képeket, vagy kattints a tallózáshoz"
+              ? "Feldolgozás és transzkódolás folyamatban…"
+              : "Húzd ide a fotókat, videókat vagy GIF-eket, vagy kattints a tallózáshoz"
           }}</strong>
+          <span class="drop-hint">Képek és GIF-ek automatikusan WebP-re, videók MP4 (max 1080p)-re tömörítve</span>
           <input
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             multiple
             hidden
             @change="
@@ -389,12 +401,42 @@ onMounted(async () => {
           />
         </label>
         <p v-if="!images.length" class="muted">
-          Még nincs kép ennél a felhasználónál.
+          Még nincs média ennél a felhasználónál.
         </p>
         <ul class="thumbs">
-          <li v-for="im in images" :key="im.id">
-            <img :src="im.url" alt="" loading="lazy" />
-            <button @click="removeImage(im)" aria-label="Kép törlése">
+          <li v-for="im in images" :key="im.id" :class="{ 'private-media': im.requiresAuth }">
+            <video
+              v-if="im.mediaType === 'video'"
+              :src="api.getMediaUrl(im.url)"
+              muted
+              playsinline
+              preload="metadata"
+            ></video>
+            <img
+              v-else
+              :src="api.getMediaUrl(im.url)"
+              alt=""
+              loading="lazy"
+            />
+
+            <!-- Média típus jelvény -->
+            <span v-if="im.mediaType === 'video'" class="media-badge video-badge" title="Videó">
+              <i class="fa-solid fa-video"></i>
+            </span>
+
+            <!-- Auth/Láthatóság kapcsoló gomb -->
+            <button
+              class="auth-toggle-btn"
+              :class="{ locked: im.requiresAuth }"
+              @click.stop="toggleAuth(im)"
+              :title="im.requiresAuth ? 'Csak bejelentkezve látható (Kattints a publikussá tételhez)' : 'Publikus (Kattints, hogy csak bejelentkezve látsszon)'"
+              :aria-label="im.requiresAuth ? 'Csak bejelentkezve látható' : 'Publikus tartalom'"
+            >
+              <i :class="im.requiresAuth ? 'fa-solid fa-lock' : 'fa-solid fa-lock-open'"></i>
+            </button>
+
+            <!-- Törlés gomb -->
+            <button class="delete-media-btn" @click.stop="removeImage(im)" aria-label="Törlés" title="Törlés">
               <i class="fa-solid fa-xmark"></i>
             </button>
           </li>
@@ -745,6 +787,10 @@ aside li.on {
   border-color: var(--accent);
   background: var(--panel);
 }
+.drop-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
 .thumbs {
   list-style: none;
   padding: 0;
@@ -758,13 +804,56 @@ aside li.on {
   border-radius: 6px;
   overflow: hidden;
   background: var(--panel);
+  border: 1px solid transparent;
+  transition: border-color 0.2s;
 }
-.thumbs img {
+.thumbs li.private-media {
+  border-color: rgba(242, 180, 65, 0.5);
+}
+.thumbs img,
+.thumbs video {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
-.thumbs button {
+.media-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 0.7rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  pointer-events: none;
+}
+.auth-toggle-btn {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  transition: all 0.15s ease;
+}
+.auth-toggle-btn:hover {
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  transform: scale(1.08);
+}
+.auth-toggle-btn.locked {
+  background: var(--accent);
+  color: #1a1405;
+}
+.delete-media-btn {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -775,10 +864,17 @@ aside li.on {
   background: rgba(0, 0, 0, 0.7);
   color: #fff;
   opacity: 0;
-  transition: opacity 0.15s;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: opacity 0.15s, transform 0.15s;
 }
-.thumbs li:hover button,
-.thumbs button:focus-visible {
+.delete-media-btn:hover {
+  background: #ff4d4f;
+  transform: scale(1.08);
+}
+.thumbs li:hover .delete-media-btn,
+.delete-media-btn:focus-visible {
   opacity: 1;
 }
 .toast {

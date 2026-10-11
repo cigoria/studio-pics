@@ -29,7 +29,7 @@ const initial = (n) => n.trim().charAt(0).toUpperCase();
           </span>
           <span class="name">{{ u.name }}</span>
           <span class="count"
-            ><i class="fa-regular fa-images"></i> {{ u.count }} kép</span
+            ><i class="fa-regular fa-images"></i> {{ u.count }} média</span
           >
         </button>
       </li>

@@ -1,8 +1,20 @@
 let password = sessionStorage.getItem("adminPw") || "";
 export const hasPassword = () => !!password;
+export const getPassword = () => password;
 export const setPassword = (p) => {
   password = p;
   sessionStorage.setItem("adminPw", p);
+};
+export const clearPassword = () => {
+  password = "";
+  sessionStorage.removeItem("adminPw");
+};
+
+export const getMediaUrl = (url) => {
+  if (!url) return "";
+  if (!password) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}auth=${encodeURIComponent(password)}`;
 };
 
 async function req(url, opts = {}) {
@@ -38,8 +50,15 @@ export const reorderUsers = (ids) =>
 export const deleteUser = (id) => req(`/api/users/${id}`, { method: "DELETE" });
 export const deleteImage = (id) =>
   req(`/api/images/${id}`, { method: "DELETE" });
+export const updateImage = (id, body) =>
+  req(`/api/images/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 export const uploadImages = (id, files) => {
   const fd = new FormData();
   for (const f of files) fd.append("images", f);
   return req(`/api/users/${id}/images`, { method: "POST", body: fd });
 };
+

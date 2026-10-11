@@ -27,15 +27,25 @@ db.exec(`
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     file TEXT NOT NULL,
+    media_type TEXT NOT NULL DEFAULT 'image',
+    requires_auth INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 `)
 
 // Oszlop migráció és kezdeti sorszámok beállítása, ha a sort_order még nem létezett
 function migrateSchemaIfNeeded() {
-  const columns = db.pragma('table_info(users)').map(c => c.name)
-  if (!columns.includes('sort_order')) {
+  const userColumns = db.pragma('table_info(users)').map(c => c.name)
+  if (!userColumns.includes('sort_order')) {
     db.exec('ALTER TABLE users ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0')
+  }
+
+  const imageColumns = db.pragma('table_info(images)').map(c => c.name)
+  if (!imageColumns.includes('media_type')) {
+    db.exec("ALTER TABLE images ADD COLUMN media_type TEXT NOT NULL DEFAULT 'image'")
+  }
+  if (!imageColumns.includes('requires_auth')) {
+    db.exec('ALTER TABLE images ADD COLUMN requires_auth INTEGER NOT NULL DEFAULT 0')
   }
 
   // Ha vannak olyan felhasználók, akiknek sort_order <= 0 vagy mind 0, inicializáljuk 1..N-re
@@ -98,8 +108,9 @@ function migrateFromJsonIfNeeded() {
 
 migrateFromJsonIfNeeded()
 
-// Felhasználók lekérdezése képszámlálóval és sorrenddel
-export function getUsers() {
+// Felhasználók lekérdezése képszámlálóval és sorrenddel (auth állapot alapján számolja a képeket)
+export function getUsers(isAuthenticated = false) {
+  const whereAuth = isAuthenticated ? '' : 'AND i.requires_auth = 0'
   const stmt = db.prepare(`
     SELECT 
       u.id, 
@@ -107,7 +118,7 @@ export function getUsers() {
       u.color, 
       u.icon, 
       u.sort_order,
-      COUNT(i.id) AS count
+      COUNT(CASE WHEN i.id IS NOT NULL ${whereAuth} THEN 1 END) AS count
     FROM users u
     LEFT JOIN images i ON u.id = i.user_id
     GROUP BY u.id, u.name, u.color, u.icon, u.sort_order
@@ -121,9 +132,12 @@ export function getUser(id) {
   return db.prepare('SELECT id, name, color, icon, sort_order FROM users WHERE id = ?').get(id)
 }
 
-// Felhasználó képeinek lekérése
-export function getUserImages(userId) {
-  return db.prepare('SELECT id, file FROM images WHERE user_id = ?').all(userId)
+// Felhasználó képeinek lekérése (auth állapot alapján szűrve)
+export function getUserImages(userId, isAuthenticated = false) {
+  if (isAuthenticated) {
+    return db.prepare('SELECT id, user_id as userId, file, media_type as mediaType, requires_auth as requiresAuth FROM images WHERE user_id = ?').all(userId)
+  }
+  return db.prepare('SELECT id, user_id as userId, file, media_type as mediaType, requires_auth as requiresAuth FROM images WHERE user_id = ? AND requires_auth = 0').all(userId)
 }
 
 // Felhasználó létrehozása
@@ -168,7 +182,7 @@ export function reorderUsers(orderedIds) {
 
 // Felhasználó törlése (visszaadja a törölt képek fájlneveit, hogy a lemezről is törölhetők legyenek)
 export function deleteUser(id) {
-  const images = getUserImages(id)
+  const images = getUserImages(id, true)
   const stmt = db.prepare('DELETE FROM users WHERE id = ?')
   const res = stmt.run(id)
   return { deleted: res.changes > 0, imageFiles: images.map(i => i.file) }
@@ -176,7 +190,10 @@ export function deleteUser(id) {
 
 // Képek hozzáadása
 export function addImages(images) {
-  const insert = db.prepare('INSERT INTO images (id, user_id, file) VALUES (@id, @userId, @file)')
+  const insert = db.prepare(`
+    INSERT INTO images (id, user_id, file, media_type, requires_auth) 
+    VALUES (@id, @userId, @file, coalesce(@mediaType, 'image'), coalesce(@requiresAuth, 0))
+  `)
   const insertMany = db.transaction((imgs) => {
     for (const img of imgs) {
       insert.run(img)
@@ -187,7 +204,16 @@ export function addImages(images) {
 
 // Egyedi kép lekérése
 export function getImage(id) {
-  return db.prepare('SELECT id, user_id as userId, file FROM images WHERE id = ?').get(id)
+  return db.prepare('SELECT id, user_id as userId, file, media_type as mediaType, requires_auth as requiresAuth FROM images WHERE id = ?').get(id)
+}
+
+// Kép tulajdonságainak (pl. requires_auth) frissítése
+export function updateImage(id, { requires_auth }) {
+  const current = getImage(id)
+  if (!current) return null
+  const reqAuth = requires_auth ? 1 : 0
+  db.prepare('UPDATE images SET requires_auth = ? WHERE id = ?').run(reqAuth, id)
+  return getImage(id)
 }
 
 // Kép törlése

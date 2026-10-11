@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { getImages } from "../api";
+import * as api from "../api";
 
 const route = useRoute();
 const router = useRouter();
@@ -12,6 +12,14 @@ const interval = ref(Number(localStorage.getItem("slideInterval")) || 6);
 const uiVisible = ref(true);
 const loaded = ref(false);
 const root = ref(null);
+const currentVideo = ref(null);
+
+// Login modal állapota a vetítés alatt
+const showAuthModal = ref(false);
+const authPw = ref("");
+const authError = ref("");
+const isAuthed = ref(api.hasPassword());
+
 let timer, hideTimer;
 
 const order = computed(() => images.value);
@@ -33,10 +41,30 @@ function shuffle(a) {
 }
 function schedule() {
   clearInterval(timer);
-  if (playing.value) timer = setInterval(next, interval.value * 1000);
+  // Ha épp egy videó fut, a videó lejátszása szabályozza a továbblépést, de ha a videó megáll vagy kép van, időzítünk
+  const curItem = current.value;
+  if (playing.value) {
+    if (curItem && curItem.mediaType === "video") {
+      // Videónál az onEnded esemény hívja a next()-et, de fallbackként adunk egy biztonsági időt
+      // Nem indítunk fix rövid timert ha a videó még tart
+    } else {
+      timer = setInterval(next, interval.value * 1000);
+    }
+  }
+}
+function onVideoEnded() {
+  if (playing.value) {
+    next();
+    schedule();
+  }
 }
 function togglePlay() {
   playing.value = !playing.value;
+  const vid = currentVideo.value;
+  if (vid) {
+    if (playing.value) vid.play().catch(() => {});
+    else vid.pause();
+  }
   schedule();
 }
 function setInterval_(d) {
@@ -58,6 +86,7 @@ function leave() {
   router.push("/");
 }
 function onKey(e) {
+  if (showAuthModal.value) return; // Ha nyitva van a jelszó modal, hagyjuk gépelni
   wake();
   if (e.key === "ArrowRight") {
     next();
@@ -70,16 +99,47 @@ function onKey(e) {
     togglePlay();
   } else if (e.key === "f" || e.key === "F") fullscreen();
   else if (e.key === "Escape" && !document.fullscreenElement) leave();
+  else if (e.key === "l" || e.key === "L") {
+    showAuthModal.value = !showAuthModal.value;
+  }
+}
+
+async function loadMedia() {
+  const list = await api.getImages(route.params.id);
+  images.value = shuffle(list);
+  loaded.value = true;
+  images.value.forEach((im) => {
+    if (im.mediaType !== "video") {
+      const p = new Image();
+      p.src = api.getMediaUrl(im.url);
+    }
+  });
+  index.value = 0;
+  schedule();
+}
+
+async function submitAuth() {
+  authError.value = "";
+  api.setPassword(authPw.value);
+  try {
+    await api.login();
+    isAuthed.value = true;
+    showAuthModal.value = false;
+    authPw.value = "";
+    await loadMedia();
+  } catch (err) {
+    authError.value = err.message || "Hibás jelszó";
+  }
+}
+
+function logout() {
+  api.clearPassword();
+  isAuthed.value = false;
+  loadMedia();
 }
 
 onMounted(async () => {
-  images.value = shuffle(await getImages(route.params.id));
-  loaded.value = true;
-  images.value.forEach((im) => {
-    const p = new Image();
-    p.src = im.url;
-  });
-  schedule();
+  await loadMedia();
   wake();
   window.addEventListener("keydown", onKey);
   root.value?.requestFullscreen?.().catch(() => {});
@@ -96,7 +156,7 @@ onBeforeUnmount(() => {
   <div
     ref="root"
     class="show"
-    :class="{ idle: !uiVisible }"
+    :class="{ idle: !uiVisible && !showAuthModal }"
     @mousemove="wake"
     @touchstart.passive="wake"
   >
@@ -108,13 +168,34 @@ onBeforeUnmount(() => {
           :key="im.id"
           class="slide"
         >
-          <div class="bg" :style="{ backgroundImage: `url(${im.url})` }"></div>
+          <!-- Háttér elmosás (videónál és képnél is) -->
+          <div
+            v-if="im.mediaType !== 'video'"
+            class="bg"
+            :style="{ backgroundImage: `url(${api.getMediaUrl(im.url)})` }"
+          ></div>
+          <div v-else class="bg video-bg"></div>
+
+          <!-- Kép megjelenítő -->
           <img
-            :src="im.url"
+            v-if="im.mediaType !== 'video'"
+            :src="api.getMediaUrl(im.url)"
             alt=""
             :class="['pic', 'k' + (i % 4)]"
             :style="{ animationDuration: interval + 3 + 's' }"
           />
+
+          <!-- Videó megjelenítő -->
+          <video
+            v-else
+            ref="currentVideo"
+            :src="api.getMediaUrl(im.url)"
+            class="pic video-pic"
+            autoplay
+            playsinline
+            :muted="false"
+            @ended="onVideoEnded"
+          ></video>
         </div>
       </transition-group>
       <div class="bar">
@@ -156,14 +237,51 @@ onBeforeUnmount(() => {
         <button @click="fullscreen" aria-label="Teljes képernyő">
           <i class="fa-solid fa-expand"></i>
         </button>
+        <button
+          @click="isAuthed ? logout() : (showAuthModal = true)"
+          :class="{ 'auth-active': isAuthed }"
+          :title="isAuthed ? 'Bejelentkezve (Kijelentkezéshez kattints)' : 'Bejelentkezés privát képekhez'"
+          aria-label="Bejelentkezés"
+        >
+          <i :class="isAuthed ? 'fa-solid fa-lock-open' : 'fa-solid fa-lock'"></i>
+        </button>
       </div>
-      <div class="pos">{{ index + 1 }} / {{ order.length }}</div>
+      <div class="pos">
+        <span v-if="current && current.requiresAuth" class="priv-tag"><i class="fa-solid fa-lock"></i> Védett</span>
+        {{ index + 1 }} / {{ order.length }}
+      </div>
     </template>
     <div v-else-if="loaded" class="none">
-      <p>Ehhez a felhasználóhoz még nincs kép feltöltve.</p>
-      <button class="btn ghost" @click="leave">
-        <i class="fa-solid fa-arrow-left"></i> Vissza
-      </button>
+      <p>Ehhez a felhasználóhoz még nincs megjeleníthető média.</p>
+      <div class="none-actions">
+        <button class="btn ghost" @click="leave">
+          <i class="fa-solid fa-arrow-left"></i> Vissza
+        </button>
+        <button v-if="!isAuthed" class="btn" @click="showAuthModal = true">
+          <i class="fa-solid fa-lock"></i> Bejelentkezés privát képekhez
+        </button>
+      </div>
+    </div>
+
+    <!-- Login Modal Slideshow alatt -->
+    <div v-if="showAuthModal" class="modal-backdrop" @click.self="showAuthModal = false">
+      <div class="auth-modal">
+        <h3><i class="fa-solid fa-lock"></i> Bejelentkezés</h3>
+        <p>Add meg a jelszót a privát képek és videók megtekintéséhez.</p>
+        <form @submit.prevent="submitAuth">
+          <input
+            v-model="authPw"
+            type="password"
+            placeholder="Jelszó"
+            autofocus
+          />
+          <p v-if="authError" class="modal-err">{{ authError }}</p>
+          <div class="modal-btns">
+            <button type="button" class="btn ghost sm" @click="showAuthModal = false">Mégse</button>
+            <button type="submit" class="btn sm">Belépés</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 </template>
@@ -273,13 +391,87 @@ onBeforeUnmount(() => {
   transition: opacity 0.4s;
   font-variant-numeric: tabular-nums;
 }
-.none {
-  height: 100%;
+.bar button.auth-active {
+  background: var(--accent);
+  color: #1a1405;
+}
+.video-bg {
+  background: #000;
+}
+.video-pic {
+  animation: none;
+}
+.priv-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(242, 180, 65, 0.25);
+  color: var(--accent);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  margin-right: 0.6rem;
+  vertical-align: middle;
+}
+.none-actions {
+  display: flex;
+  gap: 0.8rem;
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.2s ease;
+}
+.auth-modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 1.8rem;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 360px;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.auth-modal h3 {
+  font-size: 1.2rem;
+  display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 0.5rem;
+}
+.auth-modal p {
   color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+.auth-modal input {
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+.modal-err {
+  color: #ff7b6b;
+  font-size: 0.85rem;
+}
+.modal-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 </style>
