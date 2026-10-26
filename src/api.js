@@ -27,7 +27,9 @@ async function req(url, opts = {}) {
   return data;
 }
 export const getUsers = () => req("/api/users");
-export const getImages = (id) => req(`/api/users/${id}/images`);
+export const getImages = (id) =>
+  req(id === "all" ? "/api/images/all" : `/api/users/${id}/images`);
+export const getAllImages = () => req("/api/images/all");
 export const login = () => req("/api/login", { method: "POST" });
 export const createUser = (body) =>
   req("/api/users", {

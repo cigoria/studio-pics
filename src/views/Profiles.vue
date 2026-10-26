@@ -37,9 +37,20 @@ const initial = (n) => n.trim().charAt(0).toUpperCase();
     <p v-else-if="loaded" class="empty">
       Még nincs senki. Hozz létre egy felhasználót a vezérlőpulton.
     </p>
-    <router-link to="/dashboard" class="btn ghost manage"
-      ><i class="fa-solid fa-gear"></i> Vezérlőpult</router-link
-    >
+    <div class="actions">
+      <button
+        v-if="users.length"
+        class="btn random-btn"
+        @click="router.push('/show/all')"
+        aria-label="Full random diavetítés indítása mindenki képeiből"
+        title="Mindenki képeinek vetítése véletlen sorrendben"
+      >
+        <i class="fa-solid fa-shuffle"></i> Full Random
+      </button>
+      <router-link to="/dashboard" class="btn ghost manage"
+        ><i class="fa-solid fa-gear"></i> Vezérlőpult</router-link
+      >
+    </div>
   </main>
 </template>
 
@@ -120,5 +131,27 @@ h1 {
 }
 .manage {
   letter-spacing: 0.02em;
+}
+.actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.random-btn {
+  background: var(--accent);
+  color: #1a1405;
+  font-size: 1.05rem;
+  padding: 0.65rem 1.4rem;
+  border-radius: 6px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(242, 180, 65, 0.35);
+  transition: transform 0.2s, box-shadow 0.2s, filter 0.2s;
+}
+.random-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+  box-shadow: 0 6px 20px rgba(242, 180, 65, 0.5);
 }
 </style>

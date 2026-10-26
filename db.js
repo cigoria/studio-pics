@@ -140,6 +140,25 @@ export function getUserImages(userId, isAuthenticated = false) {
   return db.prepare('SELECT id, user_id as userId, file, media_type as mediaType, requires_auth as requiresAuth FROM images WHERE user_id = ? AND requires_auth = 0').all(userId)
 }
 
+// Összes média lekérése az összes felhasználótól (auth állapot alapján szűrve)
+export function getAllMedia(isAuthenticated = false) {
+  const whereAuth = isAuthenticated ? '' : 'WHERE i.requires_auth = 0'
+  return db.prepare(`
+    SELECT 
+      i.id, 
+      i.user_id as userId, 
+      i.file, 
+      i.media_type as mediaType, 
+      i.requires_auth as requiresAuth,
+      coalesce(u.name, 'Ismeretlen') as userName,
+      coalesce(u.color, '#3b82f6') as userColor
+    FROM images i
+    LEFT JOIN users u ON u.id = i.user_id
+    ${whereAuth}
+    ORDER BY i.rowid DESC
+  `).all()
+}
+
 // Felhasználó létrehozása
 export function createUser({ id, name, color, icon, sort_order }) {
   let order = Number(sort_order)

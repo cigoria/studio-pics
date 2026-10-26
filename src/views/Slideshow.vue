@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import * as api from "../api";
 
@@ -22,8 +22,16 @@ const isAuthed = ref(api.hasPassword());
 
 let timer, hideTimer;
 
+const isAll = computed(() => route.params.id === "all");
 const order = computed(() => images.value);
 const current = computed(() => order.value[index.value]);
+
+watch(
+  () => route.params.id,
+  () => {
+    loadMedia();
+  }
+);
 
 function next() {
   if (order.value.length) index.value = (index.value + 1) % order.value.length;
@@ -238,6 +246,14 @@ onBeforeUnmount(() => {
           <i class="fa-solid fa-expand"></i>
         </button>
         <button
+          @click="router.push(isAll ? '/' : '/show/all')"
+          :class="{ 'auth-active': isAll }"
+          :title="isAll ? 'Full Random aktív (vissza a profilokhoz)' : 'Váltás Full Random módra (mindenki képe)'"
+          aria-label="Full Random mód"
+        >
+          <i class="fa-solid fa-shuffle"></i>
+        </button>
+        <button
           @click="isAuthed ? logout() : (showAuthModal = true)"
           :class="{ 'auth-active': isAuthed }"
           :title="isAuthed ? 'Bejelentkezve (Kijelentkezéshez kattints)' : 'Bejelentkezés privát képekhez'"
@@ -247,12 +263,25 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div class="pos">
-        <span v-if="current && current.requiresAuth" class="priv-tag"><i class="fa-solid fa-lock"></i> Védett</span>
+        <span v-if="isAll" class="all-tag" title="Mindenki képei">
+          <i class="fa-solid fa-shuffle"></i> Full Random
+        </span>
+        <span
+          v-if="isAll && current && current.userName"
+          class="user-tag"
+          :style="{ borderLeftColor: current.userColor || 'var(--accent)' }"
+        >
+          {{ current.userName }}
+        </span>
+        <span v-if="current && current.requiresAuth" class="priv-tag"
+          ><i class="fa-solid fa-lock"></i> Védett</span
+        >
         {{ index + 1 }} / {{ order.length }}
       </div>
     </template>
     <div v-else-if="loaded" class="none">
-      <p>Ehhez a felhasználóhoz még nincs megjeleníthető média.</p>
+      <p v-if="isAll">Még nincs megjeleníthető média a rendszerben.</p>
+      <p v-else>Ehhez a felhasználóhoz még nincs megjeleníthető média.</p>
       <div class="none-actions">
         <button class="btn ghost" @click="leave">
           <i class="fa-solid fa-arrow-left"></i> Vissza
@@ -400,6 +429,31 @@ onBeforeUnmount(() => {
 }
 .video-pic {
   animation: none;
+}
+.all-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(242, 180, 65, 0.25);
+  color: var(--accent);
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+.user-tag {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-left: 3px solid var(--accent);
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-right: 0.5rem;
+  vertical-align: middle;
 }
 .priv-tag {
   display: inline-flex;

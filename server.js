@@ -120,8 +120,34 @@ app.get('/api/users', (req, res) => {
   res.json(db.getUsers(isAuth))
 })
 
+app.get('/api/images/all', (req, res) => {
+  const isAuth = checkAuth(req)
+  const items = db.getAllMedia(isAuth).map(i => ({
+    id: i.id,
+    userId: i.userId,
+    userName: i.userName,
+    userColor: i.userColor,
+    url: '/uploads/' + i.file,
+    mediaType: i.mediaType || 'image',
+    requiresAuth: !!i.requiresAuth
+  }))
+  res.json(items)
+})
+
 app.get('/api/users/:id/images', (req, res) => {
   const isAuth = checkAuth(req)
+  if (req.params.id === 'all') {
+    const items = db.getAllMedia(isAuth).map(i => ({
+      id: i.id,
+      userId: i.userId,
+      userName: i.userName,
+      userColor: i.userColor,
+      url: '/uploads/' + i.file,
+      mediaType: i.mediaType || 'image',
+      requiresAuth: !!i.requiresAuth
+    }))
+    return res.json(items)
+  }
   const items = db.getUserImages(req.params.id, isAuth).map(i => ({
     id: i.id,
     url: '/uploads/' + i.file,
