@@ -26,8 +26,9 @@ Az admin jelszó és a port a `.env` fájlban módosítható (`ADMIN_PASSWORD`, 
 
 ## Használat
 
-1. Nyisd meg a `/dashboard` oldalt (vagy a "Vezérlőpult" gombot a főoldalon), lépj be.
-2. Hozz létre felhasználót, jelöld ki, és húzd rá a képeket.
-3. A főoldalon válaszd ki a felhasználót: elindul a véletlen sorrendű, teljes képernyős vetítés.
+1. Nyissa meg a `/dashboard` oldalt (vagy a "Vezérlőpult" gombot a főoldalon), és lépjen be.
+2. Hozzon létre egy felhasználót, jelölje ki, és húzza rá a képeket.
+3. A főoldalon válassza ki a felhasználót: elindul a véletlen sorrendű, teljes képernyős vetítés.
+4. Ha a főoldalon a Full Random gombot választja, a diavetítés az összes képből indul el, random sorrendben.
 
 Vetítés vezérlés: ←/→ léptetés, szóköz szünet, F teljes képernyő, Esc kilépés. Az adatok a `data.json` fájlban, a képek az `uploads/` mappában vannak.
