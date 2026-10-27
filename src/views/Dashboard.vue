@@ -106,7 +106,7 @@ async function addUser() {
   }
 }
 async function removeUser(u) {
-  if (!confirm(`Törlöd ${u.name} felhasználót és az összes képét?`)) return;
+  if (!confirm(`Törli ${u.name} felhasználót és az összes képét?`)) return;
   await api.deleteUser(u.id);
   await refresh();
   say("Felhasználó törölve");
@@ -386,7 +386,7 @@ onMounted(async () => {
           <strong>{{
             busy
               ? "Feldolgozás és transzkódolás folyamatban…"
-              : "Húzd ide a fotókat, videókat vagy GIF-eket, vagy kattints a tallózáshoz"
+              : "Húzza ide a fotókat, videókat vagy GIF-eket, vagy kattintson a tallózáshoz"
           }}</strong>
           <span class="drop-hint">Képek és GIF-ek automatikusan WebP-re, videók MP4 (max 1080p)-re tömörítve</span>
           <input
@@ -429,7 +429,7 @@ onMounted(async () => {
               class="auth-toggle-btn"
               :class="{ locked: im.requiresAuth }"
               @click.stop="toggleAuth(im)"
-              :title="im.requiresAuth ? 'Csak bejelentkezve látható (Kattints a publikussá tételhez)' : 'Publikus (Kattints, hogy csak bejelentkezve látsszon)'"
+              :title="im.requiresAuth ? 'Csak bejelentkezve látható (Kattintson a publikussá tételhez)' : 'Publikus (Kattintson, hogy csak bejelentkezve látsszon)'"
               :aria-label="im.requiresAuth ? 'Csak bejelentkezve látható' : 'Publikus tartalom'"
             >
               <i :class="im.requiresAuth ? 'fa-solid fa-lock' : 'fa-solid fa-lock-open'"></i>

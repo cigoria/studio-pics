@@ -207,7 +207,7 @@ onBeforeUnmount(() => {
         </div>
       </transition-group>
       <div class="bar">
-        <button @click="leave" aria-label="Vissza">
+        <button @click="leave" aria-label="Vissza" title='Vissza'>
           <i class="fa-solid fa-arrow-left"></i>
         </button>
         <span class="spacer"></span>
@@ -242,13 +242,13 @@ onBeforeUnmount(() => {
         <button @click="setInterval_(1)" aria-label="Lassabb">
           <i class="fa-solid fa-plus"></i>
         </button>
-        <button @click="fullscreen" aria-label="Teljes képernyő">
+        <button @click="fullscreen" aria-label="Teljes képernyő" title="Teljes képernyő">
           <i class="fa-solid fa-expand"></i>
         </button>
         <button
           @click="router.push(isAll ? '/' : '/show/all')"
           :class="{ 'auth-active': isAll }"
-          :title="isAll ? 'Full Random aktív (vissza a profilokhoz)' : 'Váltás Full Random módra (mindenki képe)'"
+          :title="isAll ? 'Full Random mód aktív (Vissza a profilokhoz)' : 'Váltás Full Random módra (Összes kép)'"
           aria-label="Full Random mód"
         >
           <i class="fa-solid fa-shuffle"></i>
@@ -256,14 +256,14 @@ onBeforeUnmount(() => {
         <button
           @click="isAuthed ? logout() : (showAuthModal = true)"
           :class="{ 'auth-active': isAuthed }"
-          :title="isAuthed ? 'Bejelentkezve (Kijelentkezéshez kattints)' : 'Bejelentkezés privát képekhez'"
+          :title="isAuthed ? 'Bejelentkezve (Kattintson a kijelentkezéshez)' : 'Bejelentkezés privát képekhez'"
           aria-label="Bejelentkezés"
         >
           <i :class="isAuthed ? 'fa-solid fa-lock-open' : 'fa-solid fa-lock'"></i>
         </button>
       </div>
       <div class="pos">
-        <span v-if="isAll" class="all-tag" title="Mindenki képei">
+        <span v-if="isAll" class="all-tag" title="Összes kép">
           <i class="fa-solid fa-shuffle"></i> Full Random
         </span>
         <span
@@ -296,7 +296,7 @@ onBeforeUnmount(() => {
     <div v-if="showAuthModal" class="modal-backdrop" @click.self="showAuthModal = false">
       <div class="auth-modal">
         <h3><i class="fa-solid fa-lock"></i> Bejelentkezés</h3>
-        <p>Add meg a jelszót a privát képek és videók megtekintéséhez.</p>
+        <p>Adja meg a jelszót a privát képek és videók megtekintéséhez.</p>
         <form @submit.prevent="submitAuth">
           <input
             v-model="authPw"
