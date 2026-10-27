@@ -35,19 +35,19 @@ const initial = (n) => n.trim().charAt(0).toUpperCase();
       </li>
     </ul>
     <p v-else-if="loaded" class="empty">
-      Még nincs senki. Hozz létre egy felhasználót a vezérlőpulton.
+      Még nincs senki. Hozzon létre egy felhasználót a vezérlőpulton.
     </p>
     <div class="actions">
       <button
         v-if="users.length"
         class="btn random-btn"
         @click="router.push('/show/all')"
-        aria-label="Full random diavetítés indítása mindenki képeiből"
-        title="Mindenki képeinek vetítése véletlen sorrendben"
+        aria-label="Full random diavetítés indítása az összes képből"
+        title="Összes kép vetítése véletlen sorrendben"
       >
         <i class="fa-solid fa-shuffle"></i> Full Random
       </button>
-      <router-link to="/dashboard" class="btn ghost manage"
+      <router-link to="/dashboard" class="btn ghost manage" title="Vezérlőpult"
         ><i class="fa-solid fa-gear"></i> Vezérlőpult</router-link
       >
     </div>
